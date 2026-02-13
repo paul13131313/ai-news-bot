@@ -17,17 +17,14 @@ const RSS_FEEDS = [
 // Add more as you create them
 const CHANNELS = [
   { lang: 'English', code: 'en', chatId: '@ainews_en_hq' },
-  // { lang: '日本語', code: 'ja', chatId: '@ainews_ja_hq' },
-  // { lang: 'Español', code: 'es', chatId: '@ainews_es_hq' },
-  // { lang: 'Português', code: 'pt', chatId: '@ainews_pt_hq' },
-  // { lang: 'Français', code: 'fr', chatId: '@ainews_fr_hq' },
-  // { lang: 'Deutsch', code: 'de', chatId: '@ainews_de_hq' },
-  // { lang: '한국어', code: 'ko', chatId: '@ainews_ko_hq' },
-  // { lang: 'العربية', code: 'ar', chatId: '@ainews_ar_hq' },
-  // { lang: 'हिन्दी', code: 'hi', chatId: '@ainews_hi_hq' },
-  // { lang: 'Bahasa Indonesia', code: 'id', chatId: '@ainews_id_hq' },
-  // { lang: 'Türkçe', code: 'tr', chatId: '@ainews_tr_hq' },
-  // { lang: 'Русский', code: 'ru', chatId: '@ainews_ru_hq' },
+  { lang: '日本語', code: 'ja', chatId: '@ainews_ja_hq' },
+  { lang: 'Español', code: 'es', chatId: '@ainews_es_hq' },
+  { lang: 'Português', code: 'pt', chatId: '@ainews_pt_hq' },
+  { lang: 'Français', code: 'fr', chatId: '@ainews_fr_hq' },
+  { lang: 'Bahasa Indonesia', code: 'id', chatId: '@ainews_id_hq' },
+  { lang: 'العربية', code: 'ar', chatId: '@ainews_ar_hq' },
+  { lang: 'हिन्दी', code: 'hi', chatId: '@ainews_hi_hq' },
+  { lang: 'Türkçe', code: 'tr', chatId: '@ainews_tr_hq' },
 ];
 
 const MAX_NEWS_ITEMS = 5;
@@ -45,8 +42,8 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/test') {
-      ctx.waitUntil(runNewsBot(env));
-      return new Response('News bot triggered! Check your Telegram channels.', {
+      const result = await runNewsBot(env);
+      return new Response(result || 'News bot completed! Check your Telegram channels.', {
         headers: { 'Content-Type': 'text/plain' },
       });
     }
@@ -92,22 +89,36 @@ async function runNewsBot(env) {
     const summary = await summarizeWithClaude(topArticles, env);
     console.log('🤖 Claude summary generated');
 
-    // 4. Translate and post to each channel
-    for (const channel of CHANNELS) {
+    // 4. Post English immediately, then translate others in parallel
+    const enChannel = CHANNELS.find(c => c.code === 'en');
+    if (enChannel) {
       try {
-        let message;
-        if (channel.code === 'en') {
-          message = summary;
-        } else {
-          message = await translateWithClaude(summary, channel.lang, env);
-        }
-        await postToTelegram(channel.chatId, message, env);
-        console.log(`✅ Posted to ${channel.chatId}`);
-
-        // Small delay to avoid rate limits
-        await sleep(1000);
+        await postToTelegram(enChannel.chatId, summary, env);
+        console.log(`✅ Posted to ${enChannel.chatId}`);
       } catch (err) {
-        console.error(`❌ Failed to post to ${channel.chatId}:`, err.message);
+        console.error(`❌ Failed to post to ${enChannel.chatId}:`, err.message);
+      }
+    }
+
+    const otherChannels = CHANNELS.filter(c => c.code !== 'en');
+    const translateResults = await Promise.allSettled(
+      otherChannels.map(async (channel) => {
+        const message = await translateWithClaude(summary, channel.lang, env);
+        return { channel, message };
+      })
+    );
+
+    for (const result of translateResults) {
+      if (result.status === 'fulfilled') {
+        const { channel, message } = result.value;
+        try {
+          await postToTelegram(channel.chatId, message, env);
+          console.log(`✅ Posted to ${channel.chatId}`);
+        } catch (err) {
+          console.error(`❌ Failed to post to ${channel.chatId}:`, err.message);
+        }
+      } else {
+        console.error(`❌ Translation failed:`, result.reason?.message);
       }
     }
 
@@ -117,8 +128,10 @@ async function runNewsBot(env) {
     }
 
     console.log('🎉 News bot completed successfully');
+    return '🎉 News bot completed successfully';
   } catch (err) {
     console.error('💥 News bot error:', err);
+    return `💥 Error: ${err.message}`;
   }
 }
 
@@ -281,12 +294,12 @@ async function summarizeWithClaude(articles, env) {
   const prompt = `You are an AI news curator for a Telegram channel. Given these AI-related articles, create a concise news digest in English.
 
 Format each news item as:
-🔹 **Headline** (rewritten to be concise and engaging)
+🔹 <b>Headline</b> (rewritten to be concise and engaging)
 Brief 2-3 sentence summary of the key point.
-🔗 Read more: [URL]
+🔗 Read more: <a href="URL">Link</a>
 
 At the top, add today's date and a brief greeting like:
-🤖 **AI News Daily** - [Date]
+🤖 <b>AI News Daily</b> - [Date]
 
 At the bottom, add:
 ---
@@ -294,7 +307,8 @@ At the bottom, add:
 
 Keep the total message under 4000 characters (Telegram limit).
 Use clear, accessible language. No jargon.
-Do NOT use markdown headers (#). Only use bold (**) for emphasis.
+Use HTML formatting for Telegram: <b>bold</b> for emphasis, <a href="URL">text</a> for links.
+Do NOT use markdown formatting (no **, no #, no [text](url)).
 
 Here are today's articles:
 
@@ -324,9 +338,10 @@ ${articleList}`;
 }
 
 async function translateWithClaude(englishMessage, targetLang, env) {
-  const prompt = `Translate this Telegram channel news post to ${targetLang}. 
-Keep the exact same formatting (emojis, bold, links). 
-Do not add or remove any content. 
+  const prompt = `Translate this Telegram channel news post to ${targetLang}.
+Keep the exact same HTML formatting (emojis, <b>bold</b>, <a href="...">links</a>).
+Do not add or remove any content.
+Do NOT convert HTML tags to markdown. Keep all HTML tags as-is.
 Translate naturally, not literally.
 Replace the channel handle at the bottom with the appropriate language version.
 
@@ -366,7 +381,7 @@ async function postToTelegram(chatId, text, env) {
       body: JSON.stringify({
         chat_id: chatId,
         text: text,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         disable_web_page_preview: true,
       }),
     }
