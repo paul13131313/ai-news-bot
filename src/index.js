@@ -301,6 +301,11 @@ Brief 2-3 sentence summary of the key point.
 At the top, add today's date and a brief greeting like:
 🤖 <b>AI News Daily</b> - [Date]
 
+After the news items, add a "Tool of the Day" section related to today's news:
+🛠️ <b>Tool of the Day</b>
+Tool name and a one-line description of what it does.
+<a href="https://example.com">Try it here</a>
+
 At the bottom, add:
 ---
 📢 Follow @ainews_en_hq for daily AI updates
