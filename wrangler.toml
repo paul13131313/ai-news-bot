@@ -1,0 +1,12 @@
+name = "ai-news-bot"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# KV for deduplication
+[[kv_namespaces]]
+binding = "NEWS_KV"
+id = "REPLACE_WITH_KV_ID"
+
+# Cron triggers: 8:00 AM and 18:00 PM JST (= 23:00 and 09:00 UTC)
+[triggers]
+crons = ["0 23 * * *", "0 9 * * *"]
