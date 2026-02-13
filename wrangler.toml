@@ -5,7 +5,7 @@ compatibility_date = "2024-01-01"
 # KV for deduplication
 [[kv_namespaces]]
 binding = "NEWS_KV"
-id = "REPLACE_WITH_KV_ID"
+id = "3e1ab78c894141dc875a780629f4c762"
 
 # Cron triggers: 8:00 AM and 18:00 PM JST (= 23:00 and 09:00 UTC)
 [triggers]
